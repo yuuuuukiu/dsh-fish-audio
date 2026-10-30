@@ -5,8 +5,8 @@
   "type": "module",
   "main": "index.js",
   "bin": {
-    "fish-audio-mcp": "./bin/fish-audio-mcp.js",
-    "dsh-fish-audio": "./bin/fish-audio-mcp.js"
+    "fish-audio-mcp": "bin/fish-audio-mcp.js",
+    "dsh-fish-audio": "bin/fish-audio-mcp.js"
   },
   "files": [
     "index.js",
@@ -35,7 +35,7 @@
   "author": "Yuki-U <1502407087@qq.com>",
   "repository": {
     "type": "git",
-    "url": "https://github.com/yuuuuukiu/dsh-fish-audio.git"
+    "url": "git+https://github.com/yuuuuukiu/dsh-fish-audio.git"
   },
   "homepage": "https://github.com/yuuuuukiu/dsh-fish-audio#readme",
   "bugs": {
