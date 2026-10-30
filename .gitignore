@@ -1,0 +1,10 @@
+node_modules/
+.DS_Store
+*.log
+voice/
+*.mp3
+*.wav
+*.opus
+dist/
+.env
+.fish-audio/

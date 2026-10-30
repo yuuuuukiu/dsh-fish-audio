@@ -1,0 +1,9 @@
+- insert:
+    - id: dsh-fish-audio
+      name: dsh-fish-audio
+      config:
+        apiKey: ''
+        defaultModelId: 568fe6a62f294908936212ce81e201e2
+        modelTier: s2.1-pro-free
+        outputDir: voice
+        proxyUrl: ''

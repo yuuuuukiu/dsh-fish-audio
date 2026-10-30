@@ -1,0 +1,10 @@
+.github/
+.git/
+.gitignore
+voice/
+*.log
+*.mp3
+*.wav
+*.opus
+.DS_Store
+.env

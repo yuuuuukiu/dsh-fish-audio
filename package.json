@@ -1,0 +1,58 @@
+{
+  "name": "dsh-fish-audio",
+  "version": "1.0.0",
+  "description": "Fish Audio S2.1 TTS/ASR plugin for DeepSeek Harness (DSH) and MCP Server with multi-voice, singing & pitch control",
+  "type": "module",
+  "main": "index.js",
+  "bin": {
+    "fish-audio-mcp": "./bin/fish-audio-mcp.js",
+    "dsh-fish-audio": "./bin/fish-audio-mcp.js"
+  },
+  "files": [
+    "index.js",
+    "cordis.patch.yml",
+    "src",
+    "bin",
+    "package.json",
+    "README.md",
+    "README_CN.md",
+    "LICENSE"
+  ],
+  "keywords": [
+    "deepseek",
+    "deepseek-harness",
+    "dsh",
+    "cordis",
+    "cordis-plugin",
+    "mcp",
+    "model-context-protocol",
+    "fish-audio",
+    "tts",
+    "asr",
+    "speech-synthesis",
+    "voice"
+  ],
+  "author": "Yuki-U <1502407087@qq.com>",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yuuuuukiu/dsh-fish-audio.git"
+  },
+  "homepage": "https://github.com/yuuuuukiu/dsh-fish-audio#readme",
+  "bugs": {
+    "url": "https://github.com/yuuuuukiu/dsh-fish-audio/issues"
+  },
+  "license": "MIT",
+  "dsh": {
+    "bundle": {
+      "patch": "cordis.patch.yml"
+    }
+  },
+  "peerDependencies": {
+    "@deepseek-ai/schemastery": "*"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/schemastery": {
+      "optional": true
+    }
+  }
+}
