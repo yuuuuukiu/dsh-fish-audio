@@ -110,7 +110,7 @@ export function apply(ctx, config) {
       const model = args.model || getActiveModel() || config.modelTier || 's2.1-pro-free';
       const format = args.format || 'mp3';
 
-      const baseDir = (ctx.config?.cwd) || process.cwd();
+      const baseDir = process.env.DSH_WORKSPACE || process.cwd();
       const outDir = config.outputDir
         ? (isAbsolute(config.outputDir) ? config.outputDir : resolve(baseDir, config.outputDir))
         : resolve(baseDir, 'voice');
