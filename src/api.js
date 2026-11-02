@@ -7,9 +7,9 @@ export const DEFAULT_VOICE_ID = '568fe6a62f294908936212ce81e201e2'; // 雌小鬼
 export const DEFAULT_MODEL_ID = 's2.1-pro-free'; // 官方免费无限引擎模型
 
 /**
- * 官方引擎模型目录（TTS 合成模型与 ASR 识别模型）
+ * 基础默认模型目录（当离线或首次启动时使用）
  */
-export const OFFICIAL_MODELS = [
+export const INITIAL_MODELS = [
   {
     id: 's2.1-pro-free',
     type: 'tts',
@@ -17,6 +17,13 @@ export const OFFICIAL_MODELS = [
     pricing: '免费 ($0，无限使用)',
     description: '官方推荐免费模型，具备与 S2.1-Pro 完全相同的顶级音质，支持 83 种语言与自然语言情感微调。',
     default: true,
+  },
+  {
+    id: 'drama-3',
+    type: 'tts',
+    name: 'Fish Audio Drama 3',
+    pricing: '付费点播 (按字数扣除账户 API 积分)',
+    description: 'Drama 3 旗舰短剧与情感表现力模型，支持复杂情绪转换与自然语言表演控制。',
   },
   {
     id: 's2.1-pro',
@@ -48,15 +55,90 @@ export const OFFICIAL_MODELS = [
   },
 ];
 
+export let OFFICIAL_MODELS = [...INITIAL_MODELS];
+
+let cachedModels = null;
+let lastFetchTime = 0;
+const CACHE_TTL_MS = 300_000; // 5分钟动态缓存
+
+/**
+ * 从 Fish Audio 官方 OpenAPI 实时拉取最新支持的底层模型枚举清单
+ */
+export async function fetchRemoteModels(options = {}) {
+  const now = Date.now();
+  if (!options.force && cachedModels && (now - lastFetchTime < CACHE_TTL_MS)) {
+    return cachedModels;
+  }
+  try {
+    const proxyUrl = options.proxyUrl;
+    const res = await httpRequest('https://api.fish.audio/openapi.json', {
+      method: 'GET',
+      proxyUrl,
+      timeoutMs: options.timeoutMs || 8000,
+    });
+    if (res.status === 200) {
+      const spec = JSON.parse(res.text());
+      const ttsParam = spec.paths?.['/v1/tts']?.post?.parameters?.find((p) => p.name === 'model');
+      const asrParam = spec.paths?.['/v1/asr']?.post?.parameters?.find((p) => p.name === 'model');
+      const ttsEnums = ttsParam?.schema?.enum || [];
+      const asrEnums = asrParam?.schema?.enum || [];
+
+      const models = [];
+      for (const id of ttsEnums) {
+        const isFree = id.includes('free');
+        models.push({
+          id,
+          type: 'tts',
+          name: id === 's2.1-pro-free' ? 'Fish Audio S2.1-Pro Free' : `Fish Audio ${id}`,
+          pricing: isFree ? '免费 ($0，无限使用)' : '付费点播 (按字数扣除账户 API 积分)',
+          description: isFree
+            ? '官方推荐免费模型，具备与 S2.1-Pro 完全相同的顶级音质，支持 83 种语言与自然语言情感微调。'
+            : id.includes('drama')
+              ? 'Drama 3 旗舰短剧与情感表现力模型，支持复杂情绪转换与自然语言表演控制。'
+              : `Fish Audio 官方商业 TTS 引擎模型 (${id})。`,
+          default: isFree,
+        });
+      }
+      for (const id of asrEnums) {
+        models.push({
+          id,
+          type: 'asr',
+          name: `Fish Audio ${id}`,
+          pricing: id.includes('pro') ? '高精度付费点播 (按音频秒数扣费)' : '低费率点播',
+          description: `Fish Audio 官方 ASR 语音识别转写模型 (${id})。`,
+        });
+      }
+      if (models.length > 0) {
+        cachedModels = models;
+        OFFICIAL_MODELS = models;
+        lastFetchTime = now;
+        return models;
+      }
+    }
+  } catch (_e) {
+    // 降级使用当前缓存或基础模型
+  }
+  return cachedModels || OFFICIAL_MODELS;
+}
+
 // ──────────────────────────────────────────────
 // 1. 底层引擎模型 (Engine Model) 管理
 // ──────────────────────────────────────────────
 
 export function listOfficialModels(type = null) {
+  const current = cachedModels || OFFICIAL_MODELS;
   if (type) {
-    return OFFICIAL_MODELS.filter((m) => m.type === type);
+    return current.filter((m) => m.type === type);
   }
-  return OFFICIAL_MODELS;
+  return current;
+}
+
+export async function listOfficialModelsAsync(type = null, options = {}) {
+  const models = await fetchRemoteModels(options);
+  if (type) {
+    return models.filter((m) => m.type === type);
+  }
+  return models;
 }
 
 export function getActiveModel() {
@@ -64,14 +146,21 @@ export function getActiveModel() {
   return cfg.default_model || DEFAULT_MODEL_ID;
 }
 
+export async function setActiveModelAsync(modelName, options = {}) {
+  const clean = modelName.trim().toLowerCase();
+  const models = await fetchRemoteModels(options);
+  const matched = models.find((m) => m.id.toLowerCase() === clean);
+  saveUserConfig({ default_model: clean });
+  return matched || { id: clean, name: `Fish Audio ${clean}`, pricing: '点播/自定义模型' };
+}
+
 export function setActiveModel(modelName) {
   const clean = modelName.trim().toLowerCase();
-  const matched = OFFICIAL_MODELS.find((m) => m.id.toLowerCase() === clean);
-  if (!matched && !clean.startsWith('s2') && !clean.startsWith('transcribe')) {
-    throw new Error(`未知模型名称 "${modelName}"。请运行 \`fish-audio-mcp model list\` 查看可用模型清单。`);
-  }
+  const models = cachedModels || OFFICIAL_MODELS;
+  const matched = models.find((m) => m.id.toLowerCase() === clean);
+  // 不再抛出“未知模型”异常阻断，允许用户或模型设置任何官方新发布的或者实验性模型 ID
   saveUserConfig({ default_model: clean });
-  return matched || { id: clean, name: clean };
+  return matched || { id: clean, name: `Fish Audio ${clean}`, pricing: '点播/自定义模型' };
 }
 
 // ──────────────────────────────────────────────
@@ -219,6 +308,9 @@ export async function textToSpeech(text, options = {}) {
       const errJson = JSON.parse(res.text());
       if (errJson.message) errMsg += `: ${errJson.message}`;
     } catch {}
+    if (res.status === 402) {
+      errMsg += ` (当前使用的引擎模型 "${model}" 属于付费点播模型，由于账户余额为 0 或不足导致扣费失败。请使用免费无限额度的 "s2.1-pro-free" 引擎模型)`;
+    }
     throw new Error(errMsg);
   }
 
@@ -257,14 +349,32 @@ export async function getCreditBalance(customApiKey) {
   }
 
   const data = res.json();
+  let pkgInfo = '';
+  let pkgData = null;
+  try {
+    const pkgRes = await httpRequest('https://api.fish.audio/wallet/self/package', {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${apiKey}` },
+    });
+    if (pkgRes.status === 200) {
+      pkgData = pkgRes.json();
+      const typeStr = pkgData.type ? pkgData.type.toUpperCase() : 'FREE';
+      const periodStr = pkgData.billing_period === 'year' ? '年度订阅' : '月度订阅';
+      pkgInfo = `\n- 会员订阅状态: ${typeStr} (${periodStr})\n- 网页端功能积分: ${pkgData.balance ?? 0} / ${pkgData.total ?? 0}`;
+    }
+  } catch {}
+
   return {
     content: [
       {
         type: 'text',
-        text: `Fish Audio 账户状态 (API Key):\n- 用户 ID: ${data.user_id}\n- API 积分/额度: ${data.credit}\n- 累计充值: ${data.cumulative_top_up}\n- 免费引擎模型: s2.1-pro-free (无限畅享)`,
+        text: `Fish Audio 账户状态 (API Key):\n- 用户 ID: ${data.user_id}${pkgInfo}\n- 开发者 API 余额: $${data.credit}\n- 免费无限引擎: s2.1-pro-free (无限畅享)`,
       },
     ],
-    data,
+    data: {
+      ...data,
+      package: pkgData,
+    },
   };
 }
 

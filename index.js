@@ -10,8 +10,11 @@ import {
   setActiveVoice,
   getActiveVoice,
   listOfficialModels,
+  listOfficialModelsAsync,
+  fetchRemoteModels,
   getActiveModel,
   setActiveModel,
+  setActiveModelAsync,
 } from './src/index.js';
 
 export const name = 'dsh-fish-audio';
@@ -20,12 +23,19 @@ export const inject = ['tools'];
 export const Config = z.object({
   apiKey: z.string().role('secret').description('Fish Audio API Key (sk-fish-...)').default(process.env.FISH_AUDIO_API_KEY || ''),
   defaultModelId: z.string().description('默认角色音色 ID (Reference ID，如 568fe6a62f294908936212ce81e201e2 雌小鬼)').default('568fe6a62f294908936212ce81e201e2'),
-  modelTier: z.union(['s2.1-pro-free', 's2.1-pro', 's2-pro']).description('底层 TTS 引擎模型 (免费无限请选 s2.1-pro-free)').default('s2.1-pro-free'),
+  modelTier: z.string().description('底层 TTS 引擎模型 (免费无限请选 s2.1-pro-free，其他如 drama-3, s2.1-pro 为付费点播)').default('s2.1-pro-free'),
   outputDir: z.string().description('本地音频文件落盘存储目录 (相对路径将基于工作区自动解析)').default('voice'),
   proxyUrl: z.string().description('网络代理地址 (可选，留空则使用系统代理或直连)').default(process.env.HTTP_PROXY || process.env.http_proxy || ''),
 });
 
 export function apply(ctx, config) {
+  const safeConfig = {
+    apiKey: config?.apiKey || process.env.FISH_AUDIO_API_KEY || '',
+    defaultModelId: config?.defaultModelId || '568fe6a62f294908936212ce81e201e2',
+    modelTier: config?.modelTier || 's2.1-pro-free',
+    outputDir: config?.outputDir || '/Users/yukiu/.dsh-qqbot/workspace/voice',
+    proxyUrl: config?.proxyUrl || process.env.HTTP_PROXY || 'http://127.0.0.1:7892',
+  };
   const logger = ctx.logger ?? console;
   const tools = ctx.get('tools') || ctx.tools;
   if (!tools?.register) {
@@ -106,13 +116,13 @@ export function apply(ctx, config) {
         throw new Error('fish_audio_tts: `text` parameter must be non-empty.');
       }
 
-      const voice = args.voice || args.reference_id || getActiveVoice() || config.defaultModelId;
-      const model = args.model || getActiveModel() || config.modelTier || 's2.1-pro-free';
+      const voice = args.voice || args.reference_id || getActiveVoice() || safeConfig.defaultModelId;
+      const model = args.model || getActiveModel() || safeConfig.modelTier || 's2.1-pro-free';
       const format = args.format || 'mp3';
 
       const baseDir = process.env.DSH_WORKSPACE || process.cwd();
-      const outDir = config.outputDir
-        ? (isAbsolute(config.outputDir) ? config.outputDir : resolve(baseDir, config.outputDir))
+      const outDir = safeConfig.outputDir
+        ? (isAbsolute(safeConfig.outputDir) ? safeConfig.outputDir : resolve(baseDir, safeConfig.outputDir))
         : resolve(baseDir, 'voice');
 
       if (!existsSync(outDir)) {
@@ -142,8 +152,8 @@ export function apply(ctx, config) {
           format,
           speed: args.speed,
           volume: args.volume,
-          apiKey: config.apiKey,
-          proxyUrl: config.proxyUrl,
+          apiKey: safeConfig.apiKey,
+          proxyUrl: safeConfig.proxyUrl,
         });
 
         logger.info?.(`dsh-fish-audio: generated ${res.fileSize || 0} bytes to ${filePath}`);
@@ -188,10 +198,10 @@ export function apply(ctx, config) {
       render: (_args, value) => [{ type: 'text', text: value.result }],
     },
     async execute(args) {
-      const models = listOfficialModels(args.type);
+      const models = await listOfficialModelsAsync(args.type, { proxyUrl: safeConfig.proxyUrl, force: true });
       const current = getActiveModel();
       const lines = [
-        `🧠 Fish Audio 官方底层引擎模型清单 (当前使用: ${current}):`,
+        `🧠 Fish Audio 官方底层引擎模型清单 (已动态拉取自 api.fish.audio，当前使用: ${current}):`,
         ...models.map((m, idx) => {
           const mark = m.id === current ? ' ⭐ [当前活跃]' : '';
           return `${idx + 1}. [${m.id}] ${m.name}${mark}\n   类型: ${m.type} | 资费: ${m.pricing}\n   说明: ${m.description}`;
@@ -207,13 +217,13 @@ export function apply(ctx, config) {
   // ── 3. fish_audio_set_model: 切换底层引擎模型 ──
   const setModelTool = {
     name: 'fish_audio_set_model',
-    description: 'Switch the active underlying engine model (e.g. "s2.1-pro-free" for free tier or "s2.1-pro" for paid tier).',
+    description: 'Switch the active underlying engine model (e.g. "s2.1-pro-free" for free tier or "drama-3", "s2.1-pro" for paid tier). Supports any new official or experimental model.',
     parameters: {
       type: 'object',
       properties: {
         model: {
           type: 'string',
-          description: 'Model ID to switch to, e.g. "s2.1-pro-free", "s2.1-pro", "s2-pro".',
+          description: 'Model ID to switch to, e.g. "s2.1-pro-free" (free), "drama-3", "s2.1-pro", "s2-pro", or any new model ID.',
         },
       },
       required: ['model'],
@@ -230,8 +240,8 @@ export function apply(ctx, config) {
       render: (_args, value) => [{ type: 'text', text: value.message }],
     },
     async execute(args) {
-      const updated = setActiveModel(args.model);
-      const msg = `🎉 底层引擎模型已切换为: ${updated.id} (${updated.name || updated.id})！资费: ${updated.pricing || '自定义'}`;
+      const updated = await setActiveModelAsync(args.model, { proxyUrl: safeConfig.proxyUrl });
+      const msg = `🎉 底层引擎模型已切换为: ${updated.id} (${updated.name || updated.id})！资费: ${updated.pricing || '点播/自定义'}`;
       return {
         model: updated.id,
         message: msg,
@@ -263,7 +273,7 @@ export function apply(ctx, config) {
       render: (_args, value) => [{ type: 'text', text: value.result }],
     },
     async execute(args) {
-      const res = await searchVoices(args.query || '', { proxyUrl: config.proxyUrl });
+      const res = await searchVoices(args.query || '', { proxyUrl: safeConfig.proxyUrl });
       const text = Array.isArray(res?.content)
         ? res.content.map(c => c.text).join('\n')
         : JSON.stringify(res, null, 2);
@@ -339,8 +349,8 @@ export function apply(ctx, config) {
     async execute(args) {
       const res = await speechToText(args.audio, {
         language: args.language,
-        apiKey: config.apiKey,
-        proxyUrl: config.proxyUrl,
+        apiKey: safeConfig.apiKey,
+        proxyUrl: safeConfig.proxyUrl,
       });
       return { text: res };
     },
@@ -365,7 +375,7 @@ export function apply(ctx, config) {
       render: (_args, value) => [{ type: 'text', text: value.result }],
     },
     async execute() {
-      const balance = await getCreditBalance({ apiKey: config.apiKey, proxyUrl: config.proxyUrl });
+      const balance = await getCreditBalance({ apiKey: safeConfig.apiKey, proxyUrl: safeConfig.proxyUrl });
       const text = Array.isArray(balance?.content)
         ? balance.content.map(c => c.text).join('\n')
         : JSON.stringify(balance, null, 2);
